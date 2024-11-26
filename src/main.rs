@@ -1,4 +1,4 @@
-use async_walkdir::{Filtering, WalkDir};
+use async_walkdir::{DirEntry, Filtering, WalkDir};
 use clap::Parser;
 use futures_lite::stream::StreamExt;
 use std::fs::{self, read_to_string};
@@ -47,30 +47,36 @@ async fn main() -> Result<()> {
     loop {
         match entries.next().await {
             Some(Ok(entry)) => {
-                let filename = entry.path().display().to_string();
-
-                println!("{filename}");
-
-                let input = read_to_string(&filename).context("Could not read input")?;
-
-                if let Some(data) = transform_dataview_queries(&input) {
-                    match args.dryrun {
-                        Some(true) => {
-                            println!("\n\n\n{filename}\n\n{data}");
-                        }
-                        _ => {
-                            fs::rename(&filename, format!("{}.orig", &filename))
-                                .context("Could not move file")?;
-                            fs::write(&filename, data).context("Could not write updated file")?;
-                        }
-                    }
-                }
+                process_entry(entry, args.dryrun)?;
             }
             Some(Err(e)) => {
                 eprintln!("error: {}", e);
                 break;
             }
             None => break,
+        }
+    }
+
+    Ok(())
+}
+
+fn process_entry(entry: DirEntry, dryrun: Option<bool>) -> Result<()> {
+    let filename = entry.path().display().to_string();
+
+    println!("{filename}");
+
+    let input = read_to_string(&filename).context("Could not read input")?;
+
+    if let Some(data) = transform_dataview_queries(&input) {
+        match dryrun {
+            Some(true) => {
+                println!("\n\n\n{filename}\n\n{data}");
+            }
+            _ => {
+                fs::rename(&filename, format!("{}.orig", &filename))
+                    .context("Could not move file")?;
+                fs::write(&filename, data).context("Could not write updated file")?;
+            }
         }
     }
 
@@ -114,8 +120,6 @@ fn trim_whitespace(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use assert_matches::assert_matches;
-
     use super::*;
 
     #[test]
